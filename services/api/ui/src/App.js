@@ -22,7 +22,7 @@ function App() {
 
     useEffect(() => {
         const getTopics = async () => {
-            const r = await fetch("http://localhost:8080/topics", {
+            const r = await fetch("/topics", {
                 method: "GET"
                 }
             )
@@ -35,13 +35,13 @@ function App() {
         getTopics()
     }, [])
 
-    const [data, updateData] = useState({topic: '', json: ''});
+    const [data, updateData] = useState({topic: '', json: '', attKey: 'eventid', attVal: '', attributes: {}});
     const handleChange = (name, value) => {
         updateData({...data, [name]: value.target.value});
     }
 
     const sendToTopic = async () => {
-        const result = await fetch(`http://localhost:8080/topics/${data.topic.displayName}`, {
+        const result = await fetch(`/topics/${data.topic.displayName}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -63,7 +63,7 @@ function App() {
 
     const subscribeToAll = async () => {
         for (let topic of topicList) {
-            const res = await fetch(`http://localhost:8080/topics/${topic.displayName}/subscriptions`, {
+            const res = await fetch(`/topics/${topic.displayName}/subscriptions`, {
                 method: "POST"
             })
 
@@ -74,13 +74,13 @@ function App() {
                 showToast('Subscribe', 'subscribed OK')
 
                 setSubscription(result.location)
-                setT(setInterval(async () => await pullMessages(result.location, topic.displayName), 1000))
+                setT(setInterval(async () => await pullMessages(result.location, topic.displayName), 5000))
             }
         }
     }
 
     const subscribe = async () => {
-        const res = await fetch(`http://localhost:8080/topics/${data.topic.displayName}/subscriptions`, {
+        const res = await fetch(`/topics/${data.topic.displayName}/subscriptions`, {
             method: "POST"
         })
 
@@ -95,8 +95,25 @@ function App() {
         }
     }
 
+    const createTopic = async () => {
+        const res = await fetch(`/topics`, {
+            method: "POST",
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ topicName: data.typedTopic })
+        })
+
+        if (res.status > 299) {
+            showToast('Oops', 'Something went wrong: ' + await res.json())
+        } else {
+            showToast('Topic Created', 'created topic')
+        }
+
+    }
+
     const pullMessages = async (location, topicId) => {
-        const res = await fetch(`http://localhost:8080${location || subscription}`, {
+        const res = await fetch(`${location || subscription}`, {
             method: "GET"
         })
 
@@ -165,7 +182,12 @@ function App() {
                     <Button onClick={subscribeToAll}>Subscribe to all (careful!)</Button>
                     </Row>
                 <Row>
-                    <Input readOnly={true} value={data.topic.displayName} id="topicName" type="text" placeholder="Topic"/>
+                    <Input onChange={handleChange.bind(this, 'typedTopic')} value={data.topic.displayName} id="topicName" type="text" placeholder="Topic"/>
+                </Row>
+                <Row>
+                    <Label>Add attributes</Label>
+                    <Input onChange={handleChange.bind(this, 'attKey')} value={data.attKey} />
+                    <Input onChange={handleChange.bind(this, 'attVal')} value={data.attVal} />
                 </Row>
                 <Row>
                     <Input onChange={handleChange.bind(this, 'json')} value={data.json} id="json" type="textarea" placeholder={sampleJson}/>
@@ -175,6 +197,9 @@ function App() {
                 </Row>
                 <Row>
                     <Button  onClick={sendToTopic} >Send to topic</Button>
+                </Row>
+                <Row>
+                    <Button  onClick={createTopic} >Create topic</Button>
                 </Row>
                 <Row>
                     <Button onClick={subscribe}>Subscribe</Button>

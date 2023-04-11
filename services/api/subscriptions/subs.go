@@ -33,19 +33,11 @@ func (s *Subscription) Add(newMsg map[string]interface{}) {
 }
 
 func (s *Subscription) Watch(c chan commands.ReceivedMessage) {
-loop:
-	for {
-		select {
-		case newMsg, ok := <-c:
-			if !ok {
-				log.Error("channel closed")
-				break loop
-			} else {
-				log.WithField("msg", newMsg).Info("msg received from channel")
-				s.Add(newMsg)
-			}
-		}
+	for newMsg := range c {
+		log.WithField("msg", newMsg).Info("msg received from channel")
+		s.Add(newMsg)
 	}
+	log.Error("subscription channel closed")
 }
 
 func NewSubscription(topicName string, c chan commands.ReceivedMessage) *Subscription {

@@ -22,7 +22,7 @@ func NewPostMessageToTopicHandler(ctx context.Context, pc *pubsub.Client) echo.H
 		}
 
 		topic := pc.Topic(c.Param("topic_name"))
-		topic.EnableMessageOrdering = true
+		//topic.EnableMessageOrdering = true
 
 		p, err := json.Marshal(msg.Payload)
 
@@ -31,8 +31,9 @@ func NewPostMessageToTopicHandler(ctx context.Context, pc *pubsub.Client) echo.H
 		}
 
 		r := topic.Publish(ctx, &pubsub.Message{
-			Data:        []byte(p),
-			OrderingKey: "123",
+			Data: []byte(p),
+			//OrderingKey: "123",
+
 		})
 
 		if _, err := r.Get(ctx); err != nil {
