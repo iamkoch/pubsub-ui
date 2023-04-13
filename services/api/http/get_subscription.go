@@ -4,6 +4,7 @@ import (
 	"api/models"
 	"api/subscriptions"
 	"cloud.google.com/go/pubsub"
+	"database/sql"
 	"fmt"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
@@ -35,5 +36,43 @@ func NewGetSubscriptionHandler(pubsubClient *pubsub.Client) echo.HandlerFunc {
 		log.WithField("topic", topicName).WithField("count", sub.MessageCount()).Debug("retrieving messages for topic")
 
 		return e.JSON(200, sub.Messages())
+	}
+}
+
+func NewGetSentMessagesHandler(db *sql.DB) echo.HandlerFunc {
+	type (
+		SentMessageResponseModel struct {
+			Id      int    `json:"id"`
+			Payload string `json:"payload"`
+		}
+
+		SentMessagesResponseModel struct {
+			Messages []SentMessageResponseModel `json:"messages"`
+		}
+	)
+	return func(e echo.Context) error {
+		rows, err := db.Query("SELECT * FROM sent")
+		if err != nil {
+			log.WithError(err).Error("unable to query db")
+			return e.JSON(500, models.ApiError{
+				Code: "DB_ERROR",
+				Msg:  "Unable to query db",
+			})
+		}
+		res := make([]SentMessageResponseModel, 0)
+
+		for rows.Next() {
+			s := SentMessageResponseModel{}
+			err = rows.Scan(&s.Id, &s.Payload)
+			if err != nil {
+				log.WithError(err).Error("unable to scan row")
+			} else {
+				res = append(res, s)
+			}
+		}
+
+		rows.Close()
+
+		return e.JSON(200, res)
 	}
 }

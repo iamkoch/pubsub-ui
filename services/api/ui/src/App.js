@@ -19,6 +19,17 @@ function App() {
     const sampleJson = `{ "sample": "json" }`;
 
     const [topicList, setTopicList] = useState([])
+    const [history, setHistory] = useState([])
+
+    const getHistory = async () => {
+        const r = await fetch("/history/sent", {
+            method: "GET"
+        })
+
+        const j = await r.json();
+
+        setHistory(j)
+    }
 
     useEffect(() => {
         const getTopics = async () => {
@@ -33,6 +44,7 @@ function App() {
         }
 
         getTopics()
+        getHistory()
     }, [])
 
     const [data, updateData] = useState({topic: '', json: '', attKey: 'eventid', attVal: '', attributes: {}});
@@ -53,6 +65,7 @@ function App() {
             showToast('Oops', 'Something went wrong: ' + await result.json())
         } else {
             showToast('Topic Send', 'sent to topic')
+            await getHistory()
         }
     }
 
@@ -149,6 +162,14 @@ function App() {
     }
 
     const toggleShowA = () => setShowA(!showA);
+    const formatJson = j => {
+        try {
+            return JSON.stringify(JSON.parse(data.json), null, 2);
+        }
+        catch (e) {
+            return data.json;
+        }
+    }
 
     return (
         <div className="App">
@@ -192,7 +213,7 @@ function App() {
                 <Row>
                     <Input onChange={handleChange.bind(this, 'json')} value={data.json} id="json" type="textarea" placeholder={sampleJson}/>
                     {data.json && (<SyntaxHighlighter language="json" style={docco}>
-                        {data.json}
+                        {formatJson(data.json)}
                     </SyntaxHighlighter>)}
                 </Row>
                 <Row>
@@ -203,6 +224,13 @@ function App() {
                 </Row>
                 <Row>
                     <Button onClick={subscribe}>Subscribe</Button>
+                </Row>
+                <Row>
+                    {history.map(h => {
+                        return (
+                            <a onClick={() => updateData({...data, json: h.payload})}>{h.id} - {h.payload.substring(0, 10)}...</a>
+                        )
+                    })}
                 </Row>
                 <Row>
                     {subs.map(sub => {
