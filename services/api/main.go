@@ -59,6 +59,9 @@ func main() {
 	e.GET("/topics/:topic/subscriptions/:id", http.NewGetSubscriptionHandler(pc))
 
 	e.GET("/history/sent", http.NewGetSentMessagesHandler(db))
-
-	e.Logger.Fatal(e.Start(":6969"))
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "6969"
+    }
+    e.Logger.Fatal(e.Start(":"+port))
 }

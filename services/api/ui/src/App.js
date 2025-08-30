@@ -1,25 +1,23 @@
 import './App.css';
-import {
-    Button,
-    Dropdown,
-    DropdownItem,
-    DropdownMenu,
-    DropdownToggle,
-    Input,
-    Toast,
-    ToastHeader,
-    ToastBody,
-    Label, Row, Col
-} from "reactstrap";
-import {useEffect, useState} from "react";
-import SyntaxHighlighter from 'react-syntax-highlighter';
-import { docco } from 'react-syntax-highlighter/dist/esm/styles/hljs';
+import { useEffect, useState } from "react";
+
+// Import new components
+import Layout from './components/Layout/Layout';
+import ToastContainer from './components/Layout/ToastContainer';
+import TopicManager from './components/TopicManager/TopicManager';
+import MessageComposer from './components/MessageComposer/MessageComposer';
+import ActivityFeed from './components/ActivityFeed/ActivityFeed';
+import useToast from './hooks/useToast';
 
 function App() {
-    const sampleJson = `{ "sample": "json" }`;
-
     const [topicList, setTopicList] = useState([])
     const [history, setHistory] = useState([])
+    const [selectedTopic, setSelectedTopic] = useState(null)
+    const [loading, setLoading] = useState(false)
+    const [subscription, setSubscription] = useState(null)
+    const [intervalId, setIntervalId] = useState(null)
+    const [subs, setSubs] = useState([])
+    const { toasts, success, error, removeToast } = useToast();
 
     const getHistory = async () => {
         const r = await fetch("/history/sent", {
@@ -47,82 +45,124 @@ function App() {
         getHistory()
     }, [])
 
-    const [data, updateData] = useState({topic: '', json: '', attKey: 'eventid', attVal: '', attributes: {}});
-    const handleChange = (name, value) => {
-        updateData({...data, [name]: value.target.value});
-    }
+    // Cleanup interval on unmount
+    useEffect(() => {
+        return () => {
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+        };
+    }, [intervalId])
 
-    const sendToTopic = async () => {
-        const result = await fetch(`/topics/${data.topic.displayName}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ payload: JSON.parse(data.json) })
-        });
+    // Remove old data state - now handled by individual components
 
-        if (result.status > 299) {
-            showToast('Oops', 'Something went wrong: ' + await result.json())
-        } else {
-            showToast('Topic Send', 'sent to topic')
-            await getHistory()
+    const sendToTopic = async (messageData) => {
+        setLoading(true);
+        try {
+            const result = await fetch(`/topics/${messageData.topic.displayName}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ payload: messageData.payload })
+            });
+
+            if (result.status > 299) {
+                const errorMsg = await result.text();
+                error(`Failed to send message: ${errorMsg}`);
+            } else {
+                success('Message sent successfully!');
+                await getHistory();
+            }
+        } catch (err) {
+            error(`Error sending message: ${err.message}`);
+        } finally {
+            setLoading(false);
         }
     }
 
-    const [subscription, setSubscription] = useState(null)
-    const [t, setT] = useState(null)
-
-    const [subs, setSubs] = useState([])
+    // State variables moved to top of component
 
     const subscribeToAll = async () => {
-        for (let topic of topicList) {
-            const res = await fetch(`/topics/${topic.displayName}/subscriptions`, {
-                method: "POST"
-            })
+        setLoading(true);
+        try {
+            for (let topic of topicList) {
+                const res = await fetch(`/topics/${topic.displayName}/subscriptions`, {
+                    method: "POST"
+                });
 
-            if (res.status > 299) {
-                showToast('Oops', 'Something went wrong: ' + await res.json())
-            } else {
-                const result = await res.json();
-                showToast('Subscribe', 'subscribed OK')
+                if (res.status > 299) {
+                    const errorMsg = await res.text();
+                    error(`Failed to subscribe to ${topic.displayName}: ${errorMsg}`);
+                } else {
+                    const result = await res.json();
+                    success(`Subscribed to ${topic.displayName}`);
 
-                setSubscription(result.location)
-                setT(setInterval(async () => await pullMessages(result.location, topic.displayName), 5000))
+                    setSubscription(result.location);
+                    setIntervalId(setInterval(async () => await pullMessages(result.location, topic.displayName), 5000));
+                }
             }
+        } catch (err) {
+            error(`Error subscribing to topics: ${err.message}`);
+        } finally {
+            setLoading(false);
         }
     }
 
     const subscribe = async () => {
-        const res = await fetch(`/topics/${data.topic.displayName}/subscriptions`, {
-            method: "POST"
-        })
+        if (!selectedTopic) return;
+        
+        setLoading(true);
+        try {
+            const res = await fetch(`/topics/${selectedTopic.displayName}/subscriptions`, {
+                method: "POST"
+            });
 
-        if (res.status > 299) {
-            showToast('Oops', 'Something went wrong: ' + await res.json())
-        } else {
-            const result = await res.json();
-            showToast('Subscribe', 'subscribed OK')
+            if (res.status > 299) {
+                const errorMsg = await res.text();
+                error(`Failed to subscribe: ${errorMsg}`);
+            } else {
+                const result = await res.json();
+                success(`Subscribed to ${selectedTopic.displayName}`);
 
-            setSubscription(result.location)
-            setT(setInterval(async () => await pullMessages(result.location, data.topic.displayName), 1000))
+                setSubscription(result.location);
+                setIntervalId(setInterval(async () => await pullMessages(result.location, selectedTopic.displayName), 1000));
+            }
+        } catch (err) {
+            error(`Error subscribing: ${err.message}`);
+        } finally {
+            setLoading(false);
         }
     }
 
-    const createTopic = async () => {
-        const res = await fetch(`/topics`, {
-            method: "POST",
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ topicName: data.typedTopic })
-        })
+    const createTopic = async (topicName) => {
+        setLoading(true);
+        try {
+            const res = await fetch(`/topics`, {
+                method: "POST",
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ topicName })
+            });
 
-        if (res.status > 299) {
-            showToast('Oops', 'Something went wrong: ' + await res.json())
-        } else {
-            showToast('Topic Created', 'created topic')
+            if (res.status > 299) {
+                const errorMsg = await res.text();
+                error(`Failed to create topic: ${errorMsg}`);
+            } else {
+                success(`Topic "${topicName}" created successfully!`);
+                // Refresh topic list
+                const topicsRes = await fetch("/topics", { method: "GET" });
+                if (topicsRes.ok) {
+                    const topics = await topicsRes.json();
+                    setTopicList(topics);
+                }
+            }
+        } catch (err) {
+            error(`Error creating topic: ${err.message}`);
+        } finally {
+            setLoading(false);
         }
-
     }
 
     const pullMessages = async (location, topicId) => {
@@ -131,11 +171,8 @@ function App() {
         })
 
         if (res.status > 299) {
-            showToast('Oops', 'Something went wrong: ' + await res.json())
+            // Don't show error for pull messages - it's expected during polling
         } else {
-            if (location == null) {
-                showToast('Pull', 'Pulled OK')
-            }
             const newMessages = await res.json();
 
             setSubs(prevState => {
@@ -146,108 +183,60 @@ function App() {
                 }
 
                 sub.messages = newMessages
-                return prevState
+                return [...prevState] // Return new array for proper re-render
             })
         }
     }
 
-    const [open, setOpen] = useState(false);
-    const [showA, setShowA] = useState(false);
-    const [toastInfo, setToastInfo] = useState({title: "", body: ""})
-
-    const showToast = (title, msg) => {
-        setToastInfo({title, body: msg})
-        setShowA(true)
-        setTimeout(() => setShowA(false), 3000)
-    }
-
-    const toggleShowA = () => setShowA(!showA);
-    const formatJson = j => {
-        try {
-            return JSON.stringify(JSON.parse(data.json), null, 2);
-        }
-        catch (e) {
-            return data.json;
-        }
-    }
+    // Removed old toast and utility functions - now using modern components
 
     return (
-        <div className="App">
-            <Col>
-                <Row>
-                    <Toast isOpen={showA} onClose={toggleShowA}>
-                        <ToastHeader>
-                            <img
-                                src="holder.js/20x20?text=%20"
-                                className="rounded me-2"
-                                alt=""
-                            />
-                            <strong className="me-auto">{toastInfo.title}</strong>
-                        </ToastHeader>
-                        <ToastBody>{toastInfo.body}</ToastBody>
-                    </Toast>
-                </Row>
-                <Row>
-                    <Dropdown isOpen={open} toggle={() => setOpen(!open)}>
-                        <DropdownToggle caret>
-                            Choose a topic
-                        </DropdownToggle>
-                        <DropdownMenu>
-                            {topicList.map(t => {
-                                return (
-                                    <DropdownItem onClick={() => updateData({...data, ["topic"]: t})}>{t.displayName}</DropdownItem>
-                                )
-                            })}
-                        </DropdownMenu>
-                    </Dropdown>
-                    <Button onClick={subscribeToAll}>Subscribe to all (careful!)</Button>
-                    </Row>
-                <Row>
-                    <Input onChange={handleChange.bind(this, 'typedTopic')} value={data.topic.displayName} id="topicName" type="text" placeholder="Topic"/>
-                </Row>
-                <Row>
-                    <Label>Add attributes</Label>
-                    <Input onChange={handleChange.bind(this, 'attKey')} value={data.attKey} />
-                    <Input onChange={handleChange.bind(this, 'attVal')} value={data.attVal} />
-                </Row>
-                <Row>
-                    <Input onChange={handleChange.bind(this, 'json')} value={data.json} id="json" type="textarea" placeholder={sampleJson}/>
-                    {data.json && (<SyntaxHighlighter language="json" style={docco}>
-                        {formatJson(data.json)}
-                    </SyntaxHighlighter>)}
-                </Row>
-                <Row>
-                    <Button  onClick={sendToTopic} >Send to topic</Button>
-                </Row>
-                <Row>
-                    <Button  onClick={createTopic} >Create topic</Button>
-                </Row>
-                <Row>
-                    <Button onClick={subscribe}>Subscribe</Button>
-                </Row>
-                <Row>
-                    {history.map(h => {
-                        return (
-                            <a onClick={() => updateData({...data, json: h.payload})}>{h.id} - {h.payload.substring(0, 10)}...</a>
-                        )
-                    })}
-                </Row>
-                <Row>
-                    {subs.map(sub => {
-                        return (
-                            <div>
-                                <Label>{sub.topicId}</Label>
-                                <SyntaxHighlighter language="json" style={docco}>
-                                    {JSON.stringify(sub.messages, null, 2)}
-                                </SyntaxHighlighter>
-                            </div>
-                        )
-                    })}
-                    <Input type="textarea" id="messages" />
+        <Layout connectionStatus="connected">
+            <div className="flex h-screen pt-6 px-6 gap-6 pb-6">
+                {/* Left Panel - Topic Manager */}
+                <div className="w-1/3 min-w-80">
+                    <TopicManager
+                        topicList={topicList}
+                        selectedTopic={selectedTopic}
+                        onTopicSelect={setSelectedTopic}
+                        onCreateTopic={createTopic}
+                        onSubscribe={subscribe}
+                        onSubscribeToAll={subscribeToAll}
+                        loading={loading}
+                    />
+                </div>
 
-                </Row>
-            </Col>
-        </div>
+                {/* Center Panel - Message Composer */}
+                <div className="flex-1">
+                    <MessageComposer
+                        selectedTopic={selectedTopic}
+                        onSendMessage={sendToTopic}
+                        loading={loading}
+                    />
+                </div>
+
+                {/* Right Panel - Activity Feed */}
+                <div className="w-1/3 min-w-80">
+                    <ActivityFeed
+                        sentHistory={history}
+                        receivedMessages={subs}
+                        onHistorySelect={(payload) => {
+                            // This would update the message composer
+                            // For now, we'll just show a toast
+                            success('Message loaded into composer');
+                        }}
+                        additionalPillConfigs={[
+                            { path: 'type', label: 'Type', color: 'purple' },
+                            { path: 'source', label: 'Source', color: 'blue' },
+                            { path: 'specversion', label: 'Spec', color: 'indigo' }
+                        ]}
+                    />
+                </div>
+            </div>
+
+            {/* Toast Container */}
+            <ToastContainer toasts={toasts} onRemove={removeToast} />
+        </Layout>
     );
 }
 
